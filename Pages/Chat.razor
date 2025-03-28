@@ -1,0 +1,92 @@
+﻿@page "/chat"
+@using Microsoft.AspNetCore.SignalR.Client
+@inject NavigationManager NavigationManager
+
+<h3>Complaint Chat Application</h3>
+
+<div>
+    <input @bind="FirstName" placeholder="First Name" />
+    <input @bind="LastName" placeholder="Last Name" />
+    <input @bind="Category" placeholder="Category" />
+    <br />
+    <textarea @bind="Message" placeholder="Complaint Message"></textarea>
+    <br />
+    <button @onclick="SendMessage" disabled="@(!IsConnected)">Send</button>
+</div>
+
+<ul>
+    @foreach (var complaint in Complaints)
+    {
+        <li>
+            <strong>@complaint.Date.ToString("g")</strong> -
+            @complaint.FirstName @complaint.LastName
+            (<em>@complaint.Category</em>): @complaint.Message
+        </li>
+    }
+</ul>
+
+@code {
+    private HubConnection _hubConnection;
+    private string FirstName { get; set; }
+    private string LastName { get; set; }
+    private string Category { get; set; }
+    private string Message { get; set; }
+    private List<Complaint> Complaints { get; set; } = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        _hubConnection = new HubConnectionBuilder()
+            .WithUrl(NavigationManager.ToAbsoluteUri("/chathub"))
+            .Build();
+
+        _hubConnection.On<string, string, string, string, DateTime>("ReceiveMessage", (firstName, lastName, category, message, date) =>
+        {
+            var complaint = new Complaint
+                {
+                    FirstName = firstName,
+                    LastName = lastName,
+                    Category = category,
+                    Message = message,
+                    Date = date
+                };
+
+            Complaints.Add(complaint);
+            InvokeAsync(StateHasChanged);
+        });
+
+        await _hubConnection.StartAsync();
+    }
+
+    private async Task SendMessage()
+    {
+        if (!string.IsNullOrWhiteSpace(FirstName) &&
+            !string.IsNullOrWhiteSpace(LastName) &&
+            !string.IsNullOrWhiteSpace(Category) &&
+            !string.IsNullOrWhiteSpace(Message))
+        {
+            await _hubConnection.SendAsync("SendMessage", FirstName, LastName, Category, Message, DateTime.Now);
+
+            // Clear the message after sending
+            Message = string.Empty;
+        }
+    }
+
+    public bool IsConnected => _hubConnection.State == HubConnectionState.Connected;
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_hubConnection != null)
+        {
+            await _hubConnection.DisposeAsync();
+        }
+    }
+
+    private class Complaint
+    {
+        public string FirstName { get; set; }
+        public string LastName { get; set; }
+        public string Category { get; set; }
+        public string Message { get; set; }
+        public DateTime Date { get; set; }
+    }
+}
